@@ -8,7 +8,7 @@ services:
     expose:
       - "4223"
     privileged: true
-  application:
+  playground:
     image: tinkerforge/tng-base-playground
     depends_on:
       - brickd
