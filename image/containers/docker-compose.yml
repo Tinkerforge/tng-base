@@ -1,7 +1,7 @@
 version: "2"
 services:
   brickd:
-    image: tinkerforge/tng-base-brickd
+    #image: tinkerforge/tng-base-brickd
     build: ./brickd
     ports:
       - "4223:4223"
@@ -9,7 +9,7 @@ services:
       - "4223"
     privileged: true
   playground:
-    image: tinkerforge/tng-base-playground
+    #image: tinkerforge/tng-base-playground
     depends_on:
       - brickd
     build: ./playground
