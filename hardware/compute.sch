@@ -5,8 +5,8 @@ $Descr A3 16535 11693
 encoding utf-8
 Sheet 3 4
 Title "TNG Base"
-Date "2020-05-13"
-Rev "1.1"
+Date "2020-05-15"
+Rev "1.2"
 Comp "Tinkerforge GmbH"
 Comment1 "Licensed under CERN OHL v.1.1"
 Comment2 "Copyright (©) 2020, B.Nordmeyer <bastian@tinkerforge.com>"
@@ -465,10 +465,6 @@ F 3 "" H 7050 10400 50  0000 C CNN
 	1    7050 10400
 	0    1    1    0   
 $EndComp
-Wire Wire Line
-	6200 11150 6450 11150
-Wire Wire Line
-	6650 11000 6400 11000
 $Comp
 L tinkerforge:C C310
 U 1 1 5BE39008
@@ -3060,19 +3056,9 @@ Wire Wire Line
 	7350 9150 7350 9250
 Connection ~ 7350 9250
 Wire Wire Line
-	6450 11150 6450 9750
-Wire Wire Line
 	6450 9750 7350 9750
-Connection ~ 6450 11150
-Wire Wire Line
-	6450 11150 6750 11150
 Wire Wire Line
 	7350 9650 6400 9650
-Wire Wire Line
-	6400 9650 6400 11000
-Connection ~ 6400 11000
-Wire Wire Line
-	6400 11000 6200 11000
 NoConn ~ 8000 9650
 NoConn ~ 8000 9550
 NoConn ~ 8000 9450
@@ -3097,4 +3083,22 @@ Wire Wire Line
 Connection ~ 4450 9500
 Wire Wire Line
 	4450 9500 4300 9500
+Wire Wire Line
+	6200 11150 6400 11150
+Text Notes 5600 11200 0    60   ~ 0
+SCL
+Text Notes 5600 11000 0    60   ~ 0
+SDA
+Wire Wire Line
+	6450 9750 6450 11000
+Wire Wire Line
+	6200 11000 6450 11000
+Wire Wire Line
+	6450 11000 6650 11000
+Connection ~ 6450 11000
+Wire Wire Line
+	6400 9650 6400 11150
+Connection ~ 6400 11150
+Wire Wire Line
+	6400 11150 6750 11150
 $EndSCHEMATC

@@ -5,8 +5,8 @@ $Descr A3 16535 11693
 encoding utf-8
 Sheet 4 4
 Title "TNG Base"
-Date "2020-05-13"
-Rev "1.1"
+Date "2020-05-15"
+Rev "1.2"
 Comp "Tinkerforge GmbH"
 Comment1 "Licensed under CERN OHL v.1.1"
 Comment2 "Copyright (©) 2020, B.Nordmeyer <bastian@tinkerforge.com>"
@@ -2334,4 +2334,12 @@ Wire Wire Line
 Connection ~ 11150 4450
 Wire Wire Line
 	11150 4450 12800 4450
+Text Notes 1700 6200 0    118  ~ 0
+!Connection TDI TMS!\nvs Schematic
+Text Notes 5850 5500 0    197  ~ 0
+-> 3.3VA
+Text Notes 1700 5150 0    118  ~ 0
+Reset stable?\npullup @ STM32?
+Text Notes 14900 7950 0    118  ~ 0
+1.2V Check!
 $EndSCHEMATC
