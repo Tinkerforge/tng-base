@@ -1,8 +1,6 @@
-FROM balenalib/raspberrypi3-debian-python:3-build
+FROM balenalib/raspberrypi3-alpine
 
-RUN apt-get update && apt-get install -y --no-install-recommends pm-utils
-
-RUN wget https://download.tinkerforge.com/tools/brickd/linux/brickd-2.4.1_armhf.deb
-RUN dpkg -i brickd-2.4.1_armhf.deb
-
-CMD ["brickd"]
+RUN wget https://download.tinkerforge.com/tools/brickd/alpine/brickd-2.4.1_git20200514192222-r0-armv7.apk
+RUN apk add --allow-untrusted brickd-*-armv7.apk
+RUN rm brickd-*-armv7.apk
+CMD brickd --libusb-hotplug-mknod
