@@ -1407,8 +1407,8 @@ L tinkerforge:DIODESCH D302
 U 1 1 5C27F19A
 P 8600 9450
 F 0 "D302" H 8600 9643 40  0000 C CNN
-F 1 "B0520LW" H 8600 9567 40  0000 C CNN
-F 2 "SOD-123" H 8600 9582 60  0001 C CNN
+F 1 "BAQ33-GS08" H 8600 9567 40  0000 C CNN
+F 2 "kicad-libraries:MiniMelf" H 8600 9582 60  0001 C CNN
 F 3 "" H 8600 9450 60  0000 C CNN
 	1    8600 9450
 	1    0    0    -1  
@@ -1458,8 +1458,6 @@ F 3 "" H 8550 10450 50  0000 C CNN
 $EndComp
 Wire Wire Line
 	8550 10450 8550 10400
-Text Notes 8650 9600 2    39   ~ 0
-Leakage zu groß?
 Text GLabel 3800 8750 0    60   Output ~ 0
 ETH_RESET
 Text GLabel 4300 11150 0    60   Output ~ 0
