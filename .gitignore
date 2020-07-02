@@ -1,5 +1,5 @@
 .balena/
-image/balena-cli/
-image/balena-cli-*.zip
-image/balena-os-*.zip
+image/balena/balena-cli/
+image/balena/balena-cli-*.zip
+image/balena/balena-os-*.zip
 image/raspbian/build-initramfs/
