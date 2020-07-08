@@ -8,3 +8,6 @@ dtoverlay=i2c1-bcm2708,pins_44_45=1
 
 # Enable RTC
 dtoverlay=i2c-rtc,pcf8523
+
+# Enable SPI for TNG Base Bricklet
+dtparam=spi=on
