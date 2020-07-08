@@ -28,6 +28,9 @@
 #include <fcntl.h>
 #include <sys/random.h>
 #include <crypt.h>
+#include <sys/utsname.h>
+#include <libkmod.h>
+#include <cryptoauthlib.h>
 
 #define USERNAME "tng"
 #define DEFAULT_PASSWORD "default-tng-password"
@@ -44,6 +47,57 @@ static const char salt_chars[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST
 
 static void print(const char *format, ...) __attribute__((format(printf, 1, 2)));
 static void panic(const char *format, ...) __attribute__((format(printf, 1, 2)));
+
+static const char *atca_strstatus(ATCA_STATUS status)
+{
+	#define STATUS_NAME(code) case code: return #code
+
+	switch (status) {
+	STATUS_NAME(ATCA_SUCCESS);
+	STATUS_NAME(ATCA_CONFIG_ZONE_LOCKED);
+	STATUS_NAME(ATCA_DATA_ZONE_LOCKED);
+	STATUS_NAME(ATCA_INVALID_POINTER);
+	STATUS_NAME(ATCA_INVALID_LENGTH);
+	STATUS_NAME(ATCA_WAKE_FAILED);
+	STATUS_NAME(ATCA_CHECKMAC_VERIFY_FAILED);
+	STATUS_NAME(ATCA_PARSE_ERROR);
+	STATUS_NAME(ATCA_STATUS_CRC);
+	STATUS_NAME(ATCA_STATUS_UNKNOWN);
+	STATUS_NAME(ATCA_STATUS_ECC);
+	STATUS_NAME(ATCA_STATUS_SELFTEST_ERROR);
+	STATUS_NAME(ATCA_FUNC_FAIL);
+	STATUS_NAME(ATCA_GEN_FAIL);
+	STATUS_NAME(ATCA_BAD_PARAM);
+	STATUS_NAME(ATCA_INVALID_ID);
+	STATUS_NAME(ATCA_INVALID_SIZE);
+	STATUS_NAME(ATCA_RX_CRC_ERROR);
+	STATUS_NAME(ATCA_RX_FAIL);
+	STATUS_NAME(ATCA_RX_NO_RESPONSE);
+	STATUS_NAME(ATCA_RESYNC_WITH_WAKEUP);
+	STATUS_NAME(ATCA_PARITY_ERROR);
+	STATUS_NAME(ATCA_TX_TIMEOUT);
+	STATUS_NAME(ATCA_RX_TIMEOUT);
+	STATUS_NAME(ATCA_TOO_MANY_COMM_RETRIES);
+	STATUS_NAME(ATCA_SMALL_BUFFER);
+	STATUS_NAME(ATCA_COMM_FAIL);
+	STATUS_NAME(ATCA_TIMEOUT);
+	STATUS_NAME(ATCA_BAD_OPCODE);
+	STATUS_NAME(ATCA_WAKE_SUCCESS);
+	STATUS_NAME(ATCA_EXECUTION_ERROR);
+	STATUS_NAME(ATCA_UNIMPLEMENTED);
+	STATUS_NAME(ATCA_ASSERT_FAILURE);
+	STATUS_NAME(ATCA_TX_FAIL);
+	STATUS_NAME(ATCA_NOT_LOCKED);
+	STATUS_NAME(ATCA_NO_DEVICES);
+	STATUS_NAME(ATCA_HEALTH_TEST_ERROR);
+	STATUS_NAME(ATCA_ALLOC_FAILURE);
+	STATUS_NAME(ATCA_USE_FLAGS_CONSUMED);
+	STATUS_NAME(ATCA_NOT_INITIALIZED);
+	default: return "<unknown>";
+	}
+
+	#undef STATUS_NAME
+}
 
 static void vprint(const char *format, va_list ap)
 {
@@ -194,6 +248,104 @@ static void robust_write(const char *path, int fd, const void *buffer, size_t bu
 	if ((size_t)length < buffer_length) {
 		panic("short write to %s: %s (%d)", path, strerror(errno), errno);
 	}
+}
+
+static void modprobe(const char *name)
+{
+	int rc;
+	struct utsname utsname;
+	char root[128];
+	struct kmod_ctx *ctx;
+	struct kmod_list *list = NULL;
+	struct kmod_list *iter;
+	struct kmod_module *module;
+
+	print("loading kernel module %s", name);
+
+	rc = uname(&utsname);
+
+	if (rc < 0) {
+		panic("could not get kernel release: %s (%d)", strerror(errno), errno);
+	}
+
+	snprintf(root, sizeof(root), "/root/lib/modules/%s", utsname.release);
+
+	ctx = kmod_new(root, NULL);
+
+	if (ctx == NULL) {
+		panic("could not create kmod context");
+	}
+
+	rc = kmod_module_new_from_lookup(ctx, name, &list);
+
+	if (rc < 0) {
+		panic("kmod lookup for kernel module %s failed: %s (%d)", name, strerror(-rc), -rc);
+	}
+
+	if (list == NULL) {
+		panic("could not find kernel module %s", name);
+	}
+
+	kmod_list_foreach(iter, list) {
+		module = kmod_module_get_module(iter);
+		rc = kmod_module_probe_insert_module(module, 0, NULL, NULL, NULL, NULL);
+
+		if (rc < 0) {
+			panic("could not load kernel module %s: %s (%d)", name, strerror(-rc), -rc);
+		}
+
+		kmod_module_unref(module);
+	}
+
+	kmod_module_unref_list(list);
+}
+
+static void read_crypto_chip_serial_number(void)
+{
+	int fd;
+	ATCAIfaceCfg cfg;
+	ATCA_STATUS status;
+	uint8_t serial_number[9];
+
+	fd = open("/dev/i2c-1", O_RDWR);
+
+	if (fd < 0) {
+		print("i2c open failed: %s (%d)", strerror(errno), errno);
+	}
+
+	close(fd);
+
+	memset(&cfg, 0, sizeof(cfg));
+
+	// based on cfg_ateccx08a_i2c_default in atca_cfgs.h
+	cfg.iface_type = ATCA_I2C_IFACE;
+	cfg.devtype = ATECC608A;
+	cfg.atcai2c.slave_address = 0xC0;
+	cfg.atcai2c.bus = 1;
+	cfg.atcai2c.baud = 400000;
+	cfg.wake_delay = 1500;
+	cfg.rx_retries = 20;
+
+	status = atcab_init(&cfg);
+
+	if (status != ATCA_SUCCESS) {
+		print("could not initialize cryptoauthlib: %s (%d)", atca_strstatus(status), status);
+		return;
+	}
+
+	status = atcab_read_serial_number(serial_number);
+
+	if (status != ATCA_SUCCESS) {
+		print("could not get crypto chip serial number: %s (%d)", atca_strstatus(status), status);
+		atcab_release();
+		return;
+	}
+
+	print("crypto chip serial number: %02X%02X%02X%02X%02X%02X%02X%02X%02X",
+	      serial_number[0], serial_number[1], serial_number[2], serial_number[3], serial_number[4],
+	      serial_number[5], serial_number[6], serial_number[7], serial_number[8]);
+
+	atcab_release();
 }
 
 static void change_password(void)
@@ -434,7 +586,14 @@ int main(void)
 	}
 
 	// mount /dev/mmcblk0p2 (root)
+	// FIXME: use proc/cmdline root an rootfstype instead?
 	robust_mount("/dev/mmcblk0p2", "/root", "ext4", MS_NOATIME);
+
+	// load i2c_bcm2835 and i2c_dev modules for cryptoauthlib
+	modprobe("i2c_bcm2835");
+	modprobe("i2c_dev");
+
+	read_crypto_chip_serial_number();
 
 	// change password if necessary
 	change_password();

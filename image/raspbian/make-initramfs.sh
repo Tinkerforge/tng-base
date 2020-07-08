@@ -1,5 +1,10 @@
 #!/bin/bash -ex
 
+#
+# TNG Base Raspberry Pi CMX Image
+# Copyright (C) 2020 Matthias Bolte <matthias@tinkerforge.com>
+#
+
 if [ "$(id -u)" -eq "0" ]; then
 	echo "error: must be executed as user"
 	exit 1
@@ -7,20 +12,22 @@ fi
 
 builddir=build-initramfs
 
-sudo rm -rf build-initramfs/
+sudo rm -rf ${builddir}/
 
-mkdir -p ${builddir}/initramfs/proc/
-mkdir -p ${builddir}/initramfs/sys/
-mkdir -p ${builddir}/initramfs/dev/
-mkdir -p ${builddir}/initramfs/root/
+mkdir -p ${builddir}/build/proc/
+mkdir -p ${builddir}/build/sys/
+mkdir -p ${builddir}/build/dev/
+mkdir -p ${builddir}/build/root/
 
-sudo mknod -m 644 ${builddir}/initramfs/dev/kmsg c 1 11
-sudo mknod -m 660 ${builddir}/initramfs/dev/i2c-1 c 89 1
-sudo mknod -m 660 ${builddir}/initramfs/dev/mmcblk0p1 b 179 1
-sudo mknod -m 660 ${builddir}/initramfs/dev/mmcblk0p2 b 179 2
+sudo mknod -m 644 ${builddir}/build/dev/kmsg c 1 11
+sudo mknod -m 660 ${builddir}/build/dev/i2c-1 c 89 1
+sudo mknod -m 660 ${builddir}/build/dev/mmcblk0p2 b 179 2
 
-arm-linux-gnueabihf-gcc -O2 -Wall -Wextra -Werror -pedantic -static init.c -lcrypt -o ${builddir}/initramfs/init
+arm-linux-gnueabihf-gcc -s -O2 -Wall -Wextra -Werror -static -pthread \
+    -Ibuild-libkmod/build/libkmod -Ibuild-cryptoauthlib/build/cryptoauthlib \
+    init.c -lcrypt build-libkmod/build/libkmod.a \
+    build-cryptoauthlib/build/lib/libcryptoauth.a -lrt -o ${builddir}/build/init
 
-pushd ${builddir}/initramfs/
+pushd ${builddir}/build/
 find . | cpio -H newc -o | gzip > ../initramfs7.img
 popd

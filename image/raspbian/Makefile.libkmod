@@ -1,0 +1,29 @@
+#
+# TNG Base Raspberry Pi CMX Image
+# Copyright (C) 2020 Matthias Bolte <matthias@tinkerforge.com>
+#
+
+CFLAGS += -O2 -Wall -Wextra -Werror -Wno-unused-parameter -fPIC -I. -DHAVE_CONFIG_H -include config.h -DSYSCONFDIR=\""/etc/"\"
+SOURCES := $(wildcard libkmod/*.c) $(wildcard shared/*.c)
+OBJECTS := ${SOURCES:.c=.o}
+
+ifneq ($(findstring $(MAKEFLAGS),s),s)
+ifndef V
+	E := @
+endif
+endif
+
+.PHONY: all clean
+
+all: libkmod.a Makefile
+
+clean: Makefile
+	$(E)rm $(OBJECTS) libkmod.a
+
+%.o: %.c Makefile
+	@echo CC $@
+	$(E)arm-linux-gnueabihf-gcc $(CFLAGS) -c -o $@ $<
+
+libkmod.a: $(OBJECTS) Makefile
+	@echo AR $@
+	$(E)arm-linux-gnueabihf-ar rcs $@ $(OBJECTS)
