@@ -2336,10 +2336,8 @@ Wire Wire Line
 	11150 4450 12800 4450
 Text Notes 1700 6200 0    118  ~ 0
 !Connection TDI TMS!\nvs Schematic
-Text Notes 5850 5500 0    197  ~ 0
--> 3.3VA
 Text Notes 1700 5150 0    118  ~ 0
 Reset stable?\npullup @ STM32?
-Text Notes 14900 7950 0    118  ~ 0
-1.2V Check!
+Text Notes 13800 7900 0    118  ~ 0
+1.2V Oszi Ripple Check!\nIncrease Wires (0.5A!)\nMore Vias
 $EndSCHEMATC
