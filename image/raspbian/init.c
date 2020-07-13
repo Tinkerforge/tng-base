@@ -438,29 +438,36 @@ static void replace_password(void)
 	}
 
 	++encrypted_begin; // skip colon
+
+	if (encrypted_begin[0] == '*') {
+		print("account %s has no password set, skipping password replacement", ACCOUNT_NAME);
+
+		goto cleanup;
+	}
+
+	if (encrypted_begin[0] != '!') {
+		print("account %s is not locked, skipping password replacement", ACCOUNT_NAME);
+
+		goto cleanup;
+	}
+
 	encrypted_end = strchr(encrypted_begin, ':');
 
 	if (encrypted_end == NULL) {
 		panic("encrypted section for account %s is malformed", ACCOUNT_NAME);
 	}
 
-	encrypted_used = encrypted_end - encrypted_begin;
+	encrypted_used = encrypted_end - (encrypted_begin + 1); // +1 to skip exclamation mark
 
 	if (encrypted_used > SHADOW_ENCRYPTED_LENGTH) {
 		panic("encrypted section for account %s is too big", ACCOUNT_NAME);
 	}
 
-	memcpy(encrypted, encrypted_begin, encrypted_used);
+	memcpy(encrypted, encrypted_begin + 1, encrypted_used); // +1 to skip exclamation mark
 
 	encrypted[encrypted_used] = '\0';
 
 	// get salt from encrypted section
-	if (encrypted[0] == '!' || encrypted[0] == '*') {
-		print("username %s does not use default password, skipping password replacement", USERNAME);
-
-		goto cleanup;
-	}
-
 	if (encrypted_used < 2) {
 		panic("encrypted section for account %s is malformed", ACCOUNT_NAME);
 	}
