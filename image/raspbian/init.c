@@ -32,7 +32,7 @@
 #include <libkmod.h>
 #include <cryptoauthlib.h>
 
-#define USERNAME "tng"
+#define ACCOUNT_NAME "tng"
 #define DEFAULT_PASSWORD "default-tng-password"
 #define SHADOW_PATH "/root/etc/shadow"
 #define SHADOW_BACKUP_PATH SHADOW_PATH"-"
@@ -348,7 +348,7 @@ static void read_crypto_chip_serial_number(void)
 	atcab_release();
 }
 
-static void change_password(void)
+static void replace_password(void)
 {
 	int fd;
 	struct stat st;
@@ -415,14 +415,14 @@ static void change_password(void)
 
 	close(fd);
 
-	// find entry for username
-	if (strncmp(buffer, USERNAME":", strlen(USERNAME":")) == 0) {
+	// find entry for account
+	if (strncmp(buffer, ACCOUNT_NAME":", strlen(ACCOUNT_NAME":")) == 0) {
 		entry_begin = buffer;
 	} else {
-		entry_begin = strstr(buffer, "\n"USERNAME":");
+		entry_begin = strstr(buffer, "\n"ACCOUNT_NAME":");
 
 		if (entry_begin == NULL) {
-			print("username %s not present, skipping password replacement", USERNAME);
+			print("account %s not present, skipping password replacement", ACCOUNT_NAME);
 
 			goto cleanup;
 		}
@@ -434,20 +434,20 @@ static void change_password(void)
 	encrypted_begin = strchr(entry_begin, ':');
 
 	if (encrypted_begin == NULL) {
-		panic("encrypted section for username %s is malformed", USERNAME);
+		panic("encrypted section for account %s is malformed", ACCOUNT_NAME);
 	}
 
 	++encrypted_begin; // skip colon
 	encrypted_end = strchr(encrypted_begin, ':');
 
 	if (encrypted_end == NULL) {
-		panic("encrypted section for username %s is malformed", USERNAME);
+		panic("encrypted section for account %s is malformed", ACCOUNT_NAME);
 	}
 
 	encrypted_used = encrypted_end - encrypted_begin;
 
 	if (encrypted_used > SHADOW_ENCRYPTED_LENGTH) {
-		panic("encrypted section for username %s is too big", USERNAME);
+		panic("encrypted section for account %s is too big", ACCOUNT_NAME);
 	}
 
 	memcpy(encrypted, encrypted_begin, encrypted_used);
@@ -462,7 +462,7 @@ static void change_password(void)
 	}
 
 	if (encrypted_used < 2) {
-		panic("encrypted section for username %s is malformed", USERNAME);
+		panic("encrypted section for account %s is malformed", ACCOUNT_NAME);
 	}
 
 	if (encrypted[0] != '$') {
@@ -471,7 +471,7 @@ static void change_password(void)
 		encrypted_prefix_end = strrchr(encrypted, '$');
 
 		if (encrypted_prefix_end == NULL) {
-			panic("encrypted section for username %s is malformed", USERNAME);
+			panic("encrypted section for account %s is malformed", ACCOUNT_NAME);
 		}
 
 		salt_used = encrypted_prefix_end - encrypted;
@@ -489,12 +489,12 @@ static void change_password(void)
 	}
 
 	if (strcmp(crypt_result, encrypted) != 0) {
-		print("username %s does not have the default password set, skipping password replacement", USERNAME);
+		print("account %s does not have the default password set, skipping password replacement", ACCOUNT_NAME);
 
 		goto cleanup;
 	}
 
-	print("username %s has the default password set, replacing password", USERNAME);
+	print("account %s has the default password set, replacing password", ACCOUNT_NAME);
 
 	// get random salt
 	print("collecting entropy");
@@ -595,8 +595,8 @@ int main(void)
 
 	read_crypto_chip_serial_number();
 
-	// change password if necessary
-	change_password();
+	// replace password if necessary
+	replace_password();
 
 	// unmount /proc
 	print("unmounting /proc");
