@@ -5,3 +5,4 @@ image/balena/balena-os-*.zip
 image/raspbian/build-cryptoauthlib/
 image/raspbian/build-libkmod/
 image/raspbian/build-initramfs/
+image/raspbian/build-zlib/

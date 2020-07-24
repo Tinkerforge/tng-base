@@ -45,6 +45,7 @@
 #include <sys/utsname.h>
 #include <libkmod.h>
 #include <cryptoauthlib.h>
+#include <zlib.h>
 
 #define ACCOUNT_NAME "tng"
 #define DEFAULT_PASSWORD "default-tng-password"
@@ -362,6 +363,14 @@ static void read_crypto_chip_serial_number(void)
 	atcab_release();
 }
 
+static void read_eeprom(void)
+{
+	uint32_t result = crc32(0L, Z_NULL, 0);
+	result = crc32(result, (uint8_t *)"foobar", 6);
+
+	print("crc32(\"foobar\") = %08X\n", result);
+}
+
 static void replace_password(void)
 {
 	int fd;
@@ -615,6 +624,7 @@ int main(void)
 	modprobe("i2c_dev");
 
 	read_crypto_chip_serial_number();
+	read_eeprom();
 
 	// replace password if necessary
 	replace_password();
