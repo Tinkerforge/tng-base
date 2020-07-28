@@ -2,6 +2,20 @@
 // TNG Base Raspberry Pi CMX Image
 // Copyright (C) 2020 Matthias Bolte <matthias@tinkerforge.com>
 //
+// This program is free software; you can redistribute it and/or
+// modify it under the terms of the GNU General Public License
+// as published by the Free Software Foundation; either version 2
+// of the License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+//
+// You should have received a copy of the GNU General Public License
+// along with this program; if not, write to the Free Software Foundation,
+// Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+//
 
 // http://landley.net/writing/rootfs-howto.html
 // https://wiki.gentoo.org/wiki/Custom_Initramfs
@@ -31,6 +45,7 @@
 #include <sys/utsname.h>
 #include <libkmod.h>
 #include <cryptoauthlib.h>
+#include <zlib.h>
 
 #define ACCOUNT_NAME "tng"
 #define DEFAULT_PASSWORD "default-tng-password"
@@ -348,6 +363,14 @@ static void read_crypto_chip_serial_number(void)
 	atcab_release();
 }
 
+static void read_eeprom(void)
+{
+	uint32_t result = crc32(0L, Z_NULL, 0);
+	result = crc32(result, (uint8_t *)"foobar", 6);
+
+	print("crc32(\"foobar\") = %08X\n", result);
+}
+
 static void replace_password(void)
 {
 	int fd;
@@ -601,6 +624,7 @@ int main(void)
 	modprobe("i2c_dev");
 
 	read_crypto_chip_serial_number();
+	read_eeprom();
 
 	// replace password if necessary
 	replace_password();

@@ -24,25 +24,25 @@ if [ "$(id -u)" -eq "0" ]; then
 	exit 1
 fi
 
-builddir=build-initramfs
+version=1.2.11
+builddir=build-zlib
 
-sudo rm -rf ${builddir}/
+rm -rf ${builddir}/
+mkdir -p ${builddir}
 
-mkdir -p ${builddir}/build/proc/
-mkdir -p ${builddir}/build/sys/
-mkdir -p ${builddir}/build/dev/
-mkdir -p ${builddir}/build/root/
+pushd ${builddir}/
 
-sudo mknod -m 644 ${builddir}/build/dev/kmsg c 1 11
-sudo mknod -m 660 ${builddir}/build/dev/i2c-1 c 89 1
-sudo mknod -m 660 ${builddir}/build/dev/mmcblk0p2 b 179 2
+wget https://zlib.net/zlib-${version}.tar.gz
 
-arm-linux-gnueabihf-gcc -s -O2 -Wall -Wextra -Werror -static -pthread \
-    -Ibuild-libkmod/build/libkmod -Ibuild-cryptoauthlib/build/cryptoauthlib \
-    -Ibuild-zlib/build init.c -lcrypt build-libkmod/build/libkmod.a \
-    build-cryptoauthlib/build/lib/libcryptoauth.a build-zlib/build/libz.a \
-    -lrt -o ${builddir}/build/init
+tar -xf zlib-${version}.tar.gz
 
-pushd ${builddir}/build/
-find . | cpio -H newc -o | gzip > ../initramfs7.img
+pushd zlib-${version}/
+
+CC=arm-linux-gnueabihf-gcc ./configure --static
+make
+
 popd
+
+mkdir build/
+
+cp zlib-${version}/zlib.h zlib-${version}/zconf.h zlib-${version}/libz.a build/

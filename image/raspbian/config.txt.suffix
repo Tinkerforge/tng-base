@@ -1,16 +1,25 @@
 # Load initramfs for setting device specific password
 initramfs initramfs7.img followkernel
 
-# Enable Status LED
+# Enable green status LED
 dtparam=act_led_trigger=heartbeat
 dtoverlay=act-led,gpio=20,activelow=on
 
-# Enable I2C-1 for RTC and Crypto chip
+# Enable I2C-1 bus
 dtparam=i2c1=on
 dtoverlay=i2c1-bcm2708,pins_44_45=1
 
-# Enable RTC
+# Enable NXP PCF8523 RTC
 dtoverlay=i2c-rtc,pcf8523
 
 # Enable SPI for TNG Base Bricklet
 dtparam=spi=on
+
+# Enable micro SD card interface
+dtoverlay=sdio,poll_once=off
+
+# Enable SPI2-CS0 interface
+dtoverlay=spi2-1cs,cs0_spidev=disabled
+
+# Enable Infineon SLB9670 TPM
+dtoverlay=anyspi:spi2-0,dev="infineon,slb9670",speed=32000000
