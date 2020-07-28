@@ -45,7 +45,13 @@
 #include <sys/utsname.h>
 #include <libkmod.h>
 #include <zlib.h>
+#include <sys/ioctl.h>
+#include <linux/i2c.h>
+#include <linux/i2c-dev.h>
 
+#define EEPROM_PATH "/dev/i2c-1"
+#define EEPROM_ADDRESS 0x50
+#define EEPROM_MAGIC_NUMBER 0x21474E54
 #define ACCOUNT_NAME "tng"
 #define DEFAULT_PASSWORD "default-tng-password"
 #define SHADOW_PATH "/root/etc/shadow"
@@ -53,11 +59,29 @@
 #define SHADOW_TMP_PATH SHADOW_PATH"+"
 #define SHADOW_BUFFER_LENGTH (512 * 1024)
 #define SHADOW_ENCRYPTED_LENGTH 512
-#define ENTROPY_LENGTH 16
-#define SALT_PREFIX "$6$"
+
+typedef struct {
+	uint32_t magic_number; // magic number 0x21474E54 (TNG!)
+	uint32_t checksum; // zlib CRC32 checksum over all following bytes
+	uint16_t data_length; // length of data blocks in byte
+	uint8_t data_version; // indicating the available data blocks
+} __attribute__((packed)) EEPROM_Header;
+
+typedef struct {
+	char uid[7]; // null-terminated unique identifier, exposed at /etc/tng-base-uid
+	char hostname[65]; // null-terminated /etc/hostname entry
+	char encrypted_password[107]; // null-terminated /etc/shadow password entry
+	uint8_t ethernet_config[512]; // config for Ethernet chip
+} __attribute__((packed)) EEPROM_DataV1;
+
+typedef struct {
+	EEPROM_Header header;
+	EEPROM_DataV1 data_v1;
+} __attribute__((packed)) EEPROM;
 
 static int kmsg_fd = -1;
-static const char salt_chars[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789./";
+static EEPROM eeprom;
+static bool eeprom_valid = false;
 
 static void print(const char *format, ...) __attribute__((format(printf, 1, 2)));
 static void panic(const char *format, ...) __attribute__((format(printf, 1, 2)));
@@ -272,12 +296,172 @@ static void modprobe(const char *name)
 	kmod_module_unref_list(list);
 }
 
+static int i2c_write16(int fd, uint8_t byte0, uint8_t byte1)
+{
+	struct i2c_smbus_ioctl_data args;
+	union i2c_smbus_data data;
+
+	args.read_write = I2C_SMBUS_WRITE;
+	args.command = byte0;
+	args.size = I2C_SMBUS_BYTE_DATA;
+	args.data = &data;
+
+	data.byte = byte1;
+
+	ioctl(fd, BLKFLSBUF);
+
+	return ioctl(fd, I2C_SMBUS, &args);
+}
+
+static int i2c_read8(int fd, uint8_t *byte)
+{
+	struct i2c_smbus_ioctl_data args;
+	union i2c_smbus_data data;
+	int rc;
+
+	args.read_write = I2C_SMBUS_READ;
+	args.command = 0;
+	args.size = I2C_SMBUS_BYTE;
+	args.data = &data;
+
+	ioctl(fd, BLKFLSBUF);
+
+	rc = ioctl(fd, I2C_SMBUS, &args);
+
+	if (rc < 0) {
+		return rc;
+	}
+
+	*byte = data.byte & 0xFF;
+
+	return 0;
+}
+
 static void read_eeprom(void)
 {
-	uint32_t result = crc32(0L, Z_NULL, 0);
-	result = crc32(result, (uint8_t *)"foobar", 6);
+	int fd;
+	size_t address;
+	union {
+		EEPROM eeprom;
+		uint8_t bytes[sizeof(EEPROM)];
+	} u;
+	uint8_t byte;
+	uint32_t checksum;
 
-	print("crc32(\"foobar\") = %08X\n", result);
+	eeprom_valid = false;
+
+	// open I2C bus
+	print("opening %s", EEPROM_PATH);
+
+	fd = open(EEPROM_PATH, O_RDWR);
+
+	if (fd < 0) {
+		error("could not open %s: %s (%d)", EEPROM_PATH, strerror(errno), errno);
+
+		return;
+	}
+
+	// set slave address
+	if (ioctl(fd, I2C_SLAVE, EEPROM_ADDRESS) < 0) {
+		error("could not set EEPROM slave address to 0x%02X: %s (%d)", EEPROM_ADDRESS, strerror(errno), errno);
+		close(fd);
+
+		return;
+	}
+
+	// set read address to 0
+	if (i2c_write16(fd, 0, 0) < 0) {
+		error("could not set EEPROM read address to zero: %s (%d)", strerror(errno), errno);
+		close(fd);
+
+		return;
+	}
+
+	// read header
+	print("reading EEPROM header");
+
+	for (address = 0; address < sizeof(u.eeprom.header); ++address) {
+		if (i2c_read8(fd, &u.bytes[address]) < 0) {
+			error("could not read EEPROM header at address %zu: %s (%d)", address, strerror(errno), errno);
+			close(fd);
+
+			return;
+		}
+	}
+
+	if (u.eeprom.header.magic_number != EEPROM_MAGIC_NUMBER) {
+		error("EEPROM header has wrong magic number: %08X (actual) != %08X (expected)", u.eeprom.header.magic_number, EEPROM_MAGIC_NUMBER);
+		close(fd);
+
+		return;
+	}
+
+	// read data
+	print("reading EEPROM data");
+
+	checksum = crc32(0, Z_NULL, 0);
+	checksum = crc32(checksum, (uint8_t *)&u.eeprom.header.data_length, sizeof(u.eeprom.header.data_length));
+	checksum = crc32(checksum, (uint8_t *)&u.eeprom.header.data_version, sizeof(u.eeprom.header.data_version));
+
+	for (address = sizeof(u.eeprom.header); address < sizeof(u.eeprom.header) + u.eeprom.header.data_length; ++address) {
+		if (i2c_read8(fd, &byte) < 0) {
+			error("could not read EEPROM data at address %zu: %s (%d)", address, strerror(errno), errno);
+			close(fd);
+
+			return;
+		}
+
+		if (address < sizeof(u.eeprom)) {
+			u.bytes[address] = byte;
+		}
+
+		checksum = crc32(checksum, &byte, sizeof(byte));
+	}
+
+	print("closing %s", EEPROM_PATH);
+
+	close(fd);
+
+	// check header and data
+	if (u.eeprom.header.checksum != checksum) {
+		error("EEPROM header/data has wrong checksum: %08X (actual) != %08X (expected)", checksum, u.eeprom.header.checksum);
+
+		return;
+	}
+
+	if (u.eeprom.header.data_version < 1) {
+		error("EEPROM header has invalid data-version: %u (actual) < 1 (expected)", u.eeprom.header.data_version);
+
+		return;
+	}
+
+	if (u.eeprom.header.data_version == 1 && u.eeprom.header.data_length < sizeof(u.eeprom.data_v1)) {
+		error("EEPROM header has invalid data-length: %u (actual) < %u (expected)", u.eeprom.header.data_length, sizeof(u.eeprom.data_v1));
+
+		return;
+	}
+
+	if (u.eeprom.data_v1.uid[sizeof(u.eeprom.data_v1.uid) - 1] != '\0') {
+		error("EEPROM data uid is not null-terminated");
+
+		return;
+	}
+
+	if (u.eeprom.data_v1.hostname[sizeof(u.eeprom.data_v1.hostname) - 1] != '\0') {
+		error("EEPROM data hostname is not null-terminated");
+
+		return;
+	}
+
+	if (u.eeprom.data_v1.encrypted_password[sizeof(u.eeprom.data_v1.encrypted_password) - 1] != '\0') {
+		error("EEPROM data encrypted-password is not null-terminated");
+
+		return;
+	}
+
+	memcpy(&eeprom, &u.eeprom, sizeof(eeprom));
+
+	eeprom_valid = true;
 }
 
 static void replace_password(void)
@@ -297,10 +481,12 @@ static void replace_password(void)
 	char *encrypted_prefix_end;
 	struct crypt_data crypt_data;
 	const char *crypt_result;
-	char entropy[ENTROPY_LENGTH];
-	ssize_t entropy_length;
-	size_t salt_prefix_length = strlen(SALT_PREFIX);
-	size_t i;
+
+	if (!eeprom_valid || eeprom.header.data_version < 1) {
+		error("required EEPROM data not available, skipping password replacement");
+
+		return;
+	}
 
 	crypt_data.initialized = 0;
 
@@ -325,7 +511,7 @@ static void replace_password(void)
 	print("reading %s", SHADOW_PATH);
 
 	buffer_used = st.st_size;
-	buffer = malloc(buffer_used + 1); // +1 for NULL terminator
+	buffer = malloc(buffer_used + 1); // +1 for null-terminator
 
 	if (buffer == NULL) {
 		panic("could not allocate memory");
@@ -433,39 +619,7 @@ static void replace_password(void)
 		goto cleanup;
 	}
 
-	print("account %s has the default password set, replacing password", ACCOUNT_NAME);
-
-	// get random salt
-	print("collecting entropy");
-
-	entropy_length = getrandom(entropy, ENTROPY_LENGTH, 0);
-
-	if (entropy_length < 0) {
-		panic("could not collect entropy: %s (%d)", strerror(errno), errno);
-	}
-
-	if (entropy_length < ENTROPY_LENGTH) {
-		panic("could not collect enough entropy");
-	}
-
-	memcpy(salt, SALT_PREFIX, salt_prefix_length);
-
-	salt_used = salt_prefix_length;
-
-	for (i = 0; i < ENTROPY_LENGTH; ++i) {
-		salt[salt_used++] = salt_chars[entropy[i] % (sizeof(salt_chars) - 1)];
-	}
-
-	salt[salt_used] = '\0';
-
-	// encrypt device specific password
-	print("encrypting device specific password");
-
-	crypt_result = crypt_r("foobar", salt, &crypt_data); // FIXME: use device specific password
-
-	if (crypt_result == NULL) {
-		panic("could not encrypt device specific password: %s (%d)", strerror(errno), errno);
-	}
+	print("account %s has default password set, replacing with device specific password", ACCOUNT_NAME);
 
 	// create /etc/shadow-
 	fd = create_file(SHADOW_BACKUP_PATH, st.st_uid, st.st_gid, st.st_mode);
@@ -481,7 +635,7 @@ static void replace_password(void)
 	fd = create_file(SHADOW_TMP_PATH, st.st_uid, st.st_gid, st.st_mode);
 
 	robust_write(SHADOW_TMP_PATH, fd, buffer, encrypted_begin - buffer);
-	robust_write(SHADOW_TMP_PATH, fd, crypt_result, strlen(crypt_result));
+	robust_write(SHADOW_TMP_PATH, fd, eeprom.data_v1.encrypted_password, strlen(eeprom.data_v1.encrypted_password));
 	robust_write(SHADOW_TMP_PATH, fd, encrypted_end, buffer_used - (encrypted_end - buffer));
 
 	print("closing %s", SHADOW_TMP_PATH);
@@ -532,10 +686,9 @@ int main(void)
 	// FIXME: use proc/cmdline root an rootfstype instead?
 	robust_mount("/dev/mmcblk0p2", "/root", "ext4", MS_NOATIME);
 
-	// load i2c_bcm2835 and i2c_dev modules for EEPROM access
+	// read eeprom content
 	modprobe("i2c_bcm2835");
 	modprobe("i2c_dev");
-
 	read_eeprom();
 
 	// replace password if necessary
