@@ -62,7 +62,7 @@ static const char salt_chars[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST
 static void print(const char *format, ...) __attribute__((format(printf, 1, 2)));
 static void panic(const char *format, ...) __attribute__((format(printf, 1, 2)));
 
-static void vprint(const char *format, va_list ap)
+static void vprint(const char *prefix, const char *format, va_list ap)
 {
 	char message[512];
 	char buffer[512];
@@ -71,9 +71,9 @@ static void vprint(const char *format, va_list ap)
 	vsnprintf(message, sizeof(message), format, ap);
 
 	if (kmsg_fd < 0) {
-		printf("initramfs: %s\n", message);
+		printf("initramfs: %s%s\n", prefix, message);
 	} else {
-		snprintf(buffer, sizeof(buffer), "initramfs: %s\n", message);
+		snprintf(buffer, sizeof(buffer), "initramfs: %s%s\n", prefix, message);
 
 		ignored = write(kmsg_fd, buffer, strlen(buffer)); // FIXME: error handling
 
@@ -86,7 +86,16 @@ static void print(const char *format, ...)
 	va_list ap;
 
 	va_start(ap, format);
-	vprint(format, ap);
+	vprint("", format, ap);
+	va_end(ap);
+}
+
+static void error(const char *format, ...)
+{
+	va_list ap;
+
+	va_start(ap, format);
+	vprint("error: ", format, ap);
 	va_end(ap);
 }
 
@@ -98,14 +107,14 @@ static void panic(const char *format, ...)
 
 	if (format != NULL) {
 		va_start(ap, format);
-		vprint(format, ap);
+		vprint("panic: ", format, ap);
 		va_end(ap);
 	}
 
 	// ensure /proc is mounted
 	if (mkdir("/proc", 0775) < 0) {
 		if (errno != EEXIST) {
-			print("creating /proc failed");
+			error("creating /proc failed");
 		} else {
 			errno = 0; // don't leak errno
 		}
@@ -113,7 +122,7 @@ static void panic(const char *format, ...)
 
 	if (mount("proc", "/proc", "proc", 0, "") < 0) {
 		if (errno != EBUSY) {
-			print("mounting proc at /proc failed");
+			error("mounting proc at /proc failed");
 		} else {
 			errno = 0; // don't leak errno
 		}
@@ -138,11 +147,11 @@ static void panic(const char *format, ...)
 	fp = fopen("/proc/sysrq-trigger", "wb");
 
 	if (fp == NULL) {
-		print("opening /proc/sysrq-trigger failed, cannot trigger reboot");
+		error("opening /proc/sysrq-trigger failed, cannot trigger reboot");
 	}
 
 	if (fwrite("b\n", 1, 2, fp) != 2) {
-		print("writing to /proc/sysrq-trigger failed, cannot trigger reboot");
+		error("writing to /proc/sysrq-trigger failed, cannot trigger reboot");
 	}
 
 	fclose(fp);
@@ -162,7 +171,7 @@ static void robust_mount(const char *source, const char *target, const char *typ
 
 	while (mount(source, target, type, flags, "") < 0) {
 		if (errno == ENXIO) {
-			print("mounting %s at %s failed, trying again in 250 msec", source, target);
+			error("mounting %s at %s failed, trying again in 250 msec", source, target);
 			usleep(250 * 1000);
 
 			errno = 0; // clear errno, so it doesn't leak if the next mount try succeeds
