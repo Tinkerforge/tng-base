@@ -524,6 +524,10 @@ int main(void)
 		panic("mounting sysfs at /sys failed: %s (%d)", strerror(errno), errno);
 	}
 
+	// wait 250ms for the device to show up before trying to mount it to avoid
+	// an initial warning about the device not being available yet
+	usleep(250 * 1000);
+
 	// mount /dev/mmcblk0p2 (root)
 	// FIXME: use proc/cmdline root an rootfstype instead?
 	robust_mount("/dev/mmcblk0p2", "/root", "ext4", MS_NOATIME);
