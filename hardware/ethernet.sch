@@ -2338,6 +2338,4 @@ Text Notes 1700 6200 0    118  ~ 0
 !Connection TDI TMS!\nvs Schematic
 Text Notes 1700 5150 0    118  ~ 0
 Reset stable?\npullup @ STM32?
-Text Notes 13800 7900 0    118  ~ 0
-1.2V Oszi Ripple Check!\nIncrease Wires (0.5A!)\nMore Vias
 $EndSCHEMATC
