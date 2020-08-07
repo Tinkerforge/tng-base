@@ -48,6 +48,12 @@
 #include <sys/ioctl.h>
 #include <linux/i2c.h>
 #include <linux/i2c-dev.h>
+#include <dirent.h>
+#include <sys/socket.h>
+#include <linux/sockios.h>
+#include <linux/netlink.h>
+#include <linux/ethtool.h>
+#include <net/if.h>
 
 #define EEPROM_PATH "/dev/i2c-1"
 #define EEPROM_ADDRESS 0x50
@@ -59,6 +65,8 @@
 #define SHADOW_TMP_PATH SHADOW_PATH"+"
 #define SHADOW_BUFFER_LENGTH (512 * 1024)
 #define SHADOW_ENCRYPTED_LENGTH 512
+#define ETHERNET_DEVICE_PATH "/sys/devices/platform/soc/3f980000.usb/usb1/1-1/1-1.7/1-1.7:1.0/"
+#define ETHERNET_CONFIG_LENGTH 256
 
 typedef struct {
 	uint32_t magic_number; // magic number 0x21474E54 (TNG!)
@@ -68,10 +76,11 @@ typedef struct {
 } __attribute__((packed)) EEPROM_Header;
 
 typedef struct {
+	uint32_t production_date; // BCD formatted production date (0x20200827 -> 2020-08-27), exposed at /etc/tng-base-production-date
 	char uid[7]; // null-terminated unique identifier, exposed at /etc/tng-base-uid
-	char hostname[65]; // null-terminated /etc/hostname entry
+	char hostname[65]; // null-terminated /etc/hostname entry, also exposed at /etc/tng-base-hostname
 	char encrypted_password[107]; // null-terminated /etc/shadow password entry
-	uint8_t ethernet_config[512]; // config for Ethernet chip
+	uint8_t ethernet_config[ETHERNET_CONFIG_LENGTH]; // config for Ethernet chip
 } __attribute__((packed)) EEPROM_DataV1;
 
 typedef struct {
@@ -652,8 +661,201 @@ cleanup:
 	free(buffer);
 }
 
+static void configure_ethernet(void)
+{
+	DIR *dp;
+	struct dirent *dirent;
+	int fd;
+	struct ifreq ifr;
+	union {
+		struct ethtool_eeprom eeprom;
+		uint8_t bytes[sizeof(struct ethtool_eeprom) + ETHERNET_CONFIG_LENGTH];
+	} u;
+
+	if (!eeprom_valid || eeprom.header.data_version < 1) {
+		error("required EEPROM data not available, skipping Ethernet configuration");
+
+		return;
+	}
+
+	// find Ethernet device name
+	print("looking up Ethernet device name");
+
+	dp = opendir(ETHERNET_DEVICE_PATH"net/");
+
+	if (dp == NULL) {
+		panic("could not open net/ subdirectory of Ethernet device %s: %s (%d)",
+		      ETHERNET_DEVICE_PATH, strerror(errno), errno);
+	}
+
+	errno = 0;
+	dirent = readdir(dp);
+
+	if (dirent == NULL) {
+		panic("could not read net/ subdirectory of Ethernet device %s: %s (%d)",
+		      ETHERNET_DEVICE_PATH, strerror(errno), errno);
+	}
+
+	if (dirent->d_type != DT_DIR) {
+		panic("directory entry %s of %snet/ has unexpected type: %d",
+		      dirent->d_name, ETHERNET_DEVICE_PATH, dirent->d_type);
+	}
+
+	if (strlen(dirent->d_name) >= IFNAMSIZ) {
+		panic("Ethernet device name %s is too long: %u > %u",
+		      dirent->d_name, strlen(dirent->d_name), IFNAMSIZ - 1);
+	}
+
+	print("found Ethernet device name: %s", dirent->d_name);
+
+	memset(&ifr, 0, sizeof(ifr));
+	memcpy(ifr.ifr_name, dirent->d_name, IFNAMSIZ);
+
+	closedir(dp);
+
+	ifr.ifr_name[IFNAMSIZ - 1] = '\0';
+	ifr.ifr_data = (char *)&u.eeprom;
+
+	// open control socket
+	print("opening ethtool control socket");
+
+	fd = socket(AF_INET, SOCK_DGRAM, 0);
+
+	if (fd < 0) {
+		fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
+
+		if (fd < 0) {
+			panic("could not open ethtool control socket: %s (%d)", strerror(errno), errno);
+		}
+	}
+
+	// check if config is already set
+	print("reading first Ethernet config byte");
+
+	memset(&u.bytes, 0, sizeof(u.bytes));
+
+	u.eeprom.cmd = ETHTOOL_GEEPROM;
+	u.eeprom.len = 1;
+	u.eeprom.offset = 0;
+
+	if (ioctl(fd, SIOCETHTOOL, &ifr) < 0) {
+		panic("could not read first Ethernet config byte: %s (%d)", strerror(errno), errno);
+	}
+
+	if (u.eeprom.data[0] == 0xA5) {
+		print("Ethernet already configured, skipping Ethernet configuration");
+		close(fd);
+
+		return;
+	}
+
+	// write config
+	print("writing Ethernet config");
+
+	memset(&u.bytes, 0, sizeof(u.bytes));
+
+	u.eeprom.cmd = ETHTOOL_SEEPROM;
+	u.eeprom.len = ETHERNET_CONFIG_LENGTH;
+	u.eeprom.offset = 0;
+	u.eeprom.magic = 0x7500;
+
+	memcpy(u.eeprom.data, eeprom.data_v1.ethernet_config, ETHERNET_CONFIG_LENGTH);
+
+	if (ioctl(fd, SIOCETHTOOL, &ifr) < 0) {
+		panic("could not write Ethernet config: %s (%d)", strerror(errno), errno);
+	}
+
+	usleep(100 * 1000); // wait 100 ms to let everything settle
+
+	// validate config
+	print("validating Ethernet config");
+
+	memset(&u.bytes, 0, sizeof(u.bytes));
+
+	u.eeprom.cmd = ETHTOOL_GEEPROM;
+	u.eeprom.len = ETHERNET_CONFIG_LENGTH;
+	u.eeprom.offset = 0;
+
+	if (ioctl(fd, SIOCETHTOOL, &ifr) < 0) {
+		panic("could not read Ethernet config: %s (%d)", strerror(errno), errno);
+	}
+
+	if (memcmp(u.eeprom.data, eeprom.data_v1.ethernet_config, ETHERNET_CONFIG_LENGTH) != 0) {
+		panic("Ethernet config validation failed");
+	}
+
+	close(fd);
+}
+
+void update_file(const char *path, void *content, size_t content_length)
+{
+	struct stat st;
+	int fd;
+	char buffer[content_length];
+	ssize_t length;
+	char tmp_path[256];
+
+	if (stat(path, &st) < 0) {
+		if (errno != ENOENT) {
+			error("could not get status of %s: %s (%d)", path, strerror(errno), errno);
+		}
+
+		goto update;
+	} else if (st.st_mode != (S_IFREG | 0444) || st.st_uid != 0 || st.st_gid != 0 ||
+	           (size_t)st.st_size != content_length) {
+		goto update;
+	}
+
+	fd = open(path, O_RDONLY);
+
+	if (fd < 0) {
+		error("could not open %s for reading: %s (%d)", path, strerror(errno), errno);
+
+		goto update;
+	}
+
+	length = read(fd, buffer, st.st_size);
+
+	close(fd);
+
+	if (length < 0) {
+		error("could not read from %s: %s (%d)", path, strerror(errno), errno);
+
+		goto update;
+	}
+
+	if (length < st.st_size) {
+		error("short read from %s: %s (%d)", path, strerror(errno), errno);
+
+		goto update;
+	}
+
+	if (memcmp(buffer, content, content_length) == 0) {
+		print("%s is already up-to-date, skipping update", path);
+
+		return;
+	}
+
+update:
+	snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
+
+	fd = create_file(tmp_path, 0, 0, 0444);
+
+	robust_write(tmp_path, fd, content, content_length);
+
+	fsync(fd);
+	close(fd);
+
+	print("renaming %s to %s", tmp_path, path);
+
+	if (rename(tmp_path, path) < 0) {
+		panic("could not rename %s to %s: %s (%d)", tmp_path, path, strerror(errno), errno);
+	}
+}
+
 int main(void)
 {
+	char buffer[256];
 	const char *execv_argv[] = {
 		"/sbin/init",
 		NULL
@@ -691,6 +893,34 @@ int main(void)
 
 	// replace password if necessary
 	replace_password();
+
+	// configure Ethernet if necessary
+	configure_ethernet();
+
+	// write /etc/tng-base-* files
+	if (!eeprom_valid || eeprom.header.data_version < 1) {
+		error("required EEPROM data not available, skip updating /mnt/etc/tng-base-* files");
+	} else {
+		print("updating /mnt/etc/tng-base-* files");
+
+		// production date
+		snprintf(buffer, sizeof(buffer), "%04X-%02X-%02X\n",
+		         eeprom.data_v1.production_date >> 16,
+		         (eeprom.data_v1.production_date >> 8) & 0xFF,
+		         eeprom.data_v1.production_date & 0xFF);
+
+		update_file("/mnt/etc/tng-base-production-date", buffer, strlen(buffer));
+
+		// UID
+		snprintf(buffer, sizeof(buffer), "%s\n", eeprom.data_v1.uid);
+
+		update_file("/mnt/etc/tng-base-uid", buffer, strlen(buffer));
+
+		// hostname
+		snprintf(buffer, sizeof(buffer), "%s\n", eeprom.data_v1.hostname);
+
+		update_file("/mnt/etc/tng-base-hostname", buffer, strlen(buffer));
+	}
 
 	// unmount /proc
 	print("unmounting /proc");
