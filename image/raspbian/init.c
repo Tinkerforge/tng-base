@@ -138,7 +138,7 @@ static void panic(const char *format, ...)
 	// ensure /proc is mounted
 	if (mkdir("/proc", 0775) < 0) {
 		if (errno != EEXIST) {
-			error("creating /proc failed");
+			error("could not create /proc: %s (%d)", strerror(errno), errno);
 		} else {
 			errno = 0; // don't leak errno
 		}
@@ -146,7 +146,7 @@ static void panic(const char *format, ...)
 
 	if (mount("proc", "/proc", "proc", 0, "") < 0) {
 		if (errno != EBUSY) {
-			error("mounting proc at /proc failed");
+			error("could not mount proc at /proc: %s (%d)", strerror(errno), errno);
 		} else {
 			errno = 0; // don't leak errno
 		}
@@ -195,18 +195,18 @@ static void robust_mount(const char *source, const char *target, const char *typ
 
 	while (mount(source, target, type, flags, "") < 0) {
 		if (errno == ENXIO) {
-			error("mounting %s at %s failed, trying again in 250 msec", source, target);
+			error("could not mount %s at %s, device is missing, trying again in 250 msec", source, target);
 			usleep(250 * 1000);
 
 			errno = 0; // clear errno, so it doesn't leak if the next mount try succeeds
 			++retries;
 		} else {
-			panic("mounting %s at %s failed: %s (%d)", source, target, strerror(errno), errno);
+			panic("could not mount %s at %s: %s (%d)", source, target, strerror(errno), errno);
 		}
 	}
 
 	if (retries > 0) {
-		print("mounting %s at %s succeeded after %zu %s", source, target, retries, retries == 1 ? "retry" : "retries");
+		print("succssfully mounted %s at %s after %zu %s", source, target, retries, retries == 1 ? "retry" : "retries");
 	}
 }
 
@@ -223,11 +223,11 @@ static int create_file(char *path, uid_t uid, gid_t gid, mode_t mode)
 	}
 
 	if (fchown(fd, uid, gid) < 0) {
-		panic("could not change owner of %s: %s (%d)", path, strerror(errno), errno);
+		panic("could not change owner of %s to %u:%u: %s (%d)", path, uid, gidstrerror(errno), errno);
 	}
 
 	if (fchmod(fd, mode) < 0) {
-		panic("could not change mode of %s: %s (%d)", path, strerror(errno), errno);
+		panic("could not change mode of %s to 0o%03o: %s (%d)", path, mode, strerror(errno), errno);
 	}
 
 	return fd;
@@ -275,11 +275,11 @@ static void modprobe(const char *name)
 	rc = kmod_module_new_from_lookup(ctx, name, &list);
 
 	if (rc < 0) {
-		panic("kmod lookup for kernel module %s failed: %s (%d)", name, strerror(-rc), -rc);
+		panic("could not lookup kernel module %s: %s (%d)", name, strerror(-rc), -rc);
 	}
 
 	if (list == NULL) {
-		panic("could not find kernel module %s", name);
+		panic("kernel module %s is missing", name);
 	}
 
 	kmod_list_foreach(iter, list) {
@@ -540,7 +540,7 @@ static void replace_password(void)
 		entry_begin = strstr(buffer, "\n"ACCOUNT_NAME":");
 
 		if (entry_begin == NULL) {
-			print("account %s not present, skipping password replacement", ACCOUNT_NAME);
+			print("account %s is not present, skipping password replacement", ACCOUNT_NAME);
 
 			goto cleanup;
 		}
@@ -668,22 +668,22 @@ int main(void)
 	print("mounting proc at /proc");
 
 	if (mount("proc", "/proc", "proc", 0, "") < 0) {
-		panic("mounting proc at /proc failed: %s (%d)", strerror(errno), errno);
+		panic("could not mount proc at /proc: %s (%d)", strerror(errno), errno);
 	}
 
 	// mount /sys
 	print("mounting sysfs at /sys");
 
 	if (mount("sysfs", "/sys", "sysfs", 0, "") < 0) {
-		panic("mounting sysfs at /sys failed: %s (%d)", strerror(errno), errno);
+		panic("could not mount sysfs at /sys: %s (%d)", strerror(errno), errno);
 	}
 
-	// wait 250ms for the device to show up before trying to mount it to avoid
+	// wait 250 ms for the device to show up before trying to mount it to avoid
 	// an initial warning about the device not being available yet
 	usleep(250 * 1000);
 
 	// mount /dev/mmcblk0p2 (root)
-	// FIXME: use proc/cmdline root an rootfstype instead?
+	// FIXME: use /proc/cmdline root an rootfstype instead?
 	robust_mount("/dev/mmcblk0p2", "/root", "ext4", MS_NOATIME);
 
 	// read eeprom content
@@ -698,35 +698,35 @@ int main(void)
 	print("unmounting /proc");
 
 	if (umount("/proc") < 0) {
-		panic("unmounting /proc failed: %s (%d)", strerror(errno), errno);
+		panic("could not unmount /proc: %s (%d)", strerror(errno), errno);
 	}
 
 	// unmount /sys
 	print("unmounting /sys");
 
 	if (umount("/sys") < 0) {
-		panic("unmounting /sys failed: %s (%d)", strerror(errno), errno);
+		panic("could not unmount /sys: %s (%d)", strerror(errno), errno);
 	}
 
 	// switch root (logic taken from busybox switch_root and simplified)
-	print("preparing root-mount switch");
+	print("switching root-mount");
 
 	if (chdir("/root") < 0) {
-		panic("changing current directory to new root-mount failed: %s (%d)", strerror(errno), errno);
+		panic("could not change current directory to new root-mount: %s (%d)", strerror(errno), errno);
 	}
 
 	unlink("/init"); // unlink ourself to free some memory
 
 	if (mount(".", "/", NULL, MS_MOVE, NULL) < 0) {
-		panic("moving root-mount failed: %s (%d)", strerror(errno), errno);
+		panic("could not move new root-mount: %s (%d)", strerror(errno), errno);
 	}
 
 	if (chroot(".") < 0) {
-		panic("chrooting into moved root-mount failed: %s (%d)", strerror(errno), errno);
+		panic("could not chroot into new root-mount: %s (%d)", strerror(errno), errno);
 	}
 
 	if (chdir("/") < 0) {
-		panic("changing current directory to moved root-mount failed: %s (%d)", strerror(errno), errno);
+		panic("could not change current directory to new root-mount: %s (%d)", strerror(errno), errno);
 	}
 
 	// execute /sbin/init
@@ -740,7 +740,7 @@ int main(void)
 
 	execv(execv_argv[0], (char **)execv_argv);
 
-	panic("executing /sbin/init in new root-mount failed: %s (%d)", strerror(errno), errno);
+	panic("could not execute /sbin/init in new root-mount: %s (%d)", strerror(errno), errno);
 
 	return EXIT_FAILURE; // unreachable
 }
