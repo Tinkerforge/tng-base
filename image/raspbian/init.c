@@ -54,7 +54,7 @@
 #define EEPROM_MAGIC_NUMBER 0x21474E54
 #define ACCOUNT_NAME "tng"
 #define DEFAULT_PASSWORD "default-tng-password"
-#define SHADOW_PATH "/root/etc/shadow"
+#define SHADOW_PATH "/mnt/etc/shadow"
 #define SHADOW_BACKUP_PATH SHADOW_PATH"-"
 #define SHADOW_TMP_PATH SHADOW_PATH"+"
 #define SHADOW_BUFFER_LENGTH (512 * 1024)
@@ -248,7 +248,7 @@ static void modprobe(const char *name)
 {
 	int rc;
 	struct utsname utsname;
-	char root[128];
+	char base[128];
 	struct kmod_ctx *ctx;
 	struct kmod_list *list = NULL;
 	struct kmod_list *iter;
@@ -262,9 +262,9 @@ static void modprobe(const char *name)
 		panic("could not get kernel release: %s (%d)", strerror(errno), errno);
 	}
 
-	snprintf(root, sizeof(root), "/root/lib/modules/%s", utsname.release);
+	snprintf(base, sizeof(base), "/mnt/lib/modules/%s", utsname.release);
 
-	ctx = kmod_new(root, NULL);
+	ctx = kmod_new(base, NULL);
 
 	if (ctx == NULL) {
 		panic("could not create kmod context");
@@ -682,7 +682,7 @@ int main(void)
 
 	// mount /dev/mmcblk0p2 (root)
 	// FIXME: use /proc/cmdline root an rootfstype instead?
-	robust_mount("/dev/mmcblk0p2", "/root", "ext4", MS_NOATIME);
+	robust_mount("/dev/mmcblk0p2", "/mnt", "ext4", MS_NOATIME);
 
 	// read eeprom content
 	modprobe("i2c_bcm2835");
@@ -707,28 +707,28 @@ int main(void)
 	}
 
 	// switch root (logic taken from busybox switch_root and simplified)
-	print("switching root-mount");
+	print("switching root-mount to /mnt");
 
-	if (chdir("/root") < 0) {
-		panic("could not change current directory to new root-mount: %s (%d)", strerror(errno), errno);
+	if (chdir("/mnt") < 0) {
+		panic("could not change current directory to /mnt: %s (%d)", strerror(errno), errno);
 	}
 
 	unlink("/init"); // unlink ourself to free some memory
 
 	if (mount(".", "/", NULL, MS_MOVE, NULL) < 0) {
-		panic("could not move new root-mount: %s (%d)", strerror(errno), errno);
+		panic("could not move root-mount: %s (%d)", strerror(errno), errno);
 	}
 
 	if (chroot(".") < 0) {
-		panic("could not chroot into new root-mount: %s (%d)", strerror(errno), errno);
+		panic("could not chroot into /mnt: %s (%d)", strerror(errno), errno);
 	}
 
 	if (chdir("/") < 0) {
-		panic("could not change current directory to new root-mount: %s (%d)", strerror(errno), errno);
+		panic("could not change current directory to /: %s (%d)", strerror(errno), errno);
 	}
 
 	// execute /sbin/init
-	print("executing /sbin/init in new root-mount");
+	print("executing /sbin/init in /mnt");
 
 	if (kmsg_fd >= 0) {
 		close(kmsg_fd);
@@ -738,7 +738,7 @@ int main(void)
 
 	execv(execv_argv[0], (char **)execv_argv);
 
-	panic("could not execute /sbin/init in new root-mount: %s (%d)", strerror(errno), errno);
+	panic("could not execute /sbin/init in /mnt: %s (%d)", strerror(errno), errno);
 
 	return EXIT_FAILURE; // unreachable
 }
