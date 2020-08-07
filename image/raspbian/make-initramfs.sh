@@ -31,7 +31,7 @@ sudo rm -rf ${builddir}/
 mkdir -p ${builddir}/build/proc/
 mkdir -p ${builddir}/build/sys/
 mkdir -p ${builddir}/build/dev/
-mkdir -p ${builddir}/build/root/
+mkdir -p ${builddir}/build/mnt/
 
 sudo mknod -m 644 ${builddir}/build/dev/kmsg c 1 11
 sudo mknod -m 660 ${builddir}/build/dev/i2c-1 c 89 1
