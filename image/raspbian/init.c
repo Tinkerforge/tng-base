@@ -208,13 +208,13 @@ static void robust_mount(const char *source, const char *target, const char *typ
 	}
 }
 
-static int create_file(char *path, uid_t uid, gid_t gid, mode_t mode)
+static int create_file(const char *path, uid_t uid, gid_t gid, mode_t mode)
 {
 	int fd;
 
 	print("creating %s", path);
 
-	fd = open(path, O_CREAT | O_TRUNC | O_WRONLY, 0600);
+	fd = open(path, O_CREAT | O_TRUNC | O_WRONLY, mode);
 
 	if (fd < 0) {
 		panic("could not create %s for writing: %s (%d)", path, strerror(errno), errno);
