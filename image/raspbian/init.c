@@ -152,12 +152,9 @@ static void panic(const char *format, ...)
 		}
 	}
 
-	// wait 30 seconds
-	print("triggering reboot in 30 sec");
-	sleep(10);
-
-	print("triggering reboot in 20 sec");
-	sleep(10);
+	// wait 60 seconds
+	print("triggering reboot in 60 sec");
+	sleep(50);
 
 	print("triggering reboot in 10 sec");
 	sleep(5);
