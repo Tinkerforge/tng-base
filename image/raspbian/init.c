@@ -168,15 +168,16 @@ static void panic(const char *format, ...)
 	fp = fopen("/proc/sysrq-trigger", "wb");
 
 	if (fp == NULL) {
-		error("opening /proc/sysrq-trigger failed, cannot trigger reboot");
-	}
+		error("could not open /proc/sysrq-trigger for writing: %s (%d)", strerror(errno), errno);
+	} else {
+		if (fwrite("b\n", 1, 2, fp) != 2) {
+			error("could not write reboot request to /proc/sysrq-trigger");
+		} else {
+			print("reboot triggered");
+		}
 
-	if (fwrite("b\n", 1, 2, fp) != 2) {
-		error("writing to /proc/sysrq-trigger failed, cannot trigger reboot");
+		fclose(fp);
 	}
-
-	fclose(fp);
-	print("reboot triggered");
 
 	// wait for reboot to happen
 	while (true) {
