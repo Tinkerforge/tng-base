@@ -221,7 +221,7 @@ static int create_file(char *path, uid_t uid, gid_t gid, mode_t mode)
 	}
 
 	if (fchown(fd, uid, gid) < 0) {
-		panic("could not change owner of %s to %u:%u: %s (%d)", path, uid, gidstrerror(errno), errno);
+		panic("could not change owner of %s to %u:%u: %s (%d)", path, uid, gid, strerror(errno), errno);
 	}
 
 	if (fchmod(fd, mode) < 0) {
