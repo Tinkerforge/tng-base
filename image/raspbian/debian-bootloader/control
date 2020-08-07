@@ -1,0 +1,14 @@
+Source: tng-base-rpi-cmx-bootloader
+Section: admin
+Priority: optional
+Maintainer: Matthias Bolte <matthias@tinkerforge.com>
+Build-Depends: debhelper (>= 10)
+Standards-Version: 4.1.3
+Homepage: https://www.tinkerforge.com/
+
+Package: tng-base-rpi-cmx-bootloader
+Architecture: armhf
+Depends: ${misc:Depends}
+Description: Tinkerforge TNG Base RPi CMX Bootloader
+ This package contains the initramfs and bootloader configuration for the
+ Tinkerforge TNG Base Raspberry Pi Compute Module.

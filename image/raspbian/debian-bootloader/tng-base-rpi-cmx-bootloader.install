@@ -1,0 +1,3 @@
+cmdline.txt boot
+config.txt boot
+initramfs7.img boot
