@@ -32,8 +32,6 @@ rm -rf ${builddir}/
 mkdir -p ${builddir}/build/debian/
 
 cp build-initramfs/initramfs7.img ${builddir}/build/
-cp cmdline.txt ${builddir}/build/
-cp config.txt ${builddir}/build/
 cp debian-bootloader/* ${builddir}/build/debian/
 
 pushd ${builddir}/build/
