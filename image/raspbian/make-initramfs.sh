@@ -31,9 +31,16 @@ sudo rm -rf ${builddir}/
 mkdir -p ${builddir}/build/proc/
 mkdir -p ${builddir}/build/sys/
 mkdir -p ${builddir}/build/dev/
+mkdir -p ${builddir}/build/etc/
+mkdir -p ${builddir}/build/usr/share/
 mkdir -p ${builddir}/build/mnt/
 
+ln -s /mnt/etc/localtime ${builddir}/build/etc/localtime
+ln -s /mnt/etc/timezone ${builddir}/build/etc/timezone
+ln -s /mnt/usr/share/zoneinfo ${builddir}/build/usr/share/zoneinfo
+
 sudo mknod -m 644 ${builddir}/build/dev/kmsg c 1 11
+sudo mknod -m 600 ${builddir}/build/dev/rtc0 c 252 0
 sudo mknod -m 660 ${builddir}/build/dev/i2c-1 c 89 1
 sudo mknod -m 660 ${builddir}/build/dev/mmcblk0p2 b 179 2
 

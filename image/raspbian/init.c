@@ -54,7 +54,11 @@
 #include <linux/netlink.h>
 #include <linux/ethtool.h>
 #include <net/if.h>
+#include <linux/rtc.h>
+#include <time.h>
+#include <sys/time.h>
 
+#define RTC_PATH "/dev/rtc0"
 #define EEPROM_PATH "/dev/i2c-1"
 #define EEPROM_ADDRESS 0x50
 #define EEPROM_MAGIC_NUMBER 0x21474E54
@@ -344,7 +348,106 @@ static int i2c_read8(int fd, uint8_t *byte)
 	return 0;
 }
 
-static void read_eeprom(void)
+static void rtc_hctosys(void)
+{
+	int fd;
+	struct tm hc_start;
+	struct tm hc_now;
+	time_t timeout_start;
+	time_t timeout_now;
+	struct timeval sys_now;
+	struct tm sys_now_local;
+	int minuteswest;
+	struct timezone tz;
+
+	// read RTC time
+	fd = open(RTC_PATH, O_RDONLY);
+
+	if (fd < 0) {
+		error("could not open %s for reading: %s (%d)", RTC_PATH, strerror(errno), errno);
+
+		return;
+	}
+
+	if (ioctl(fd, RTC_RD_TIME, &hc_start) < 0) {
+		error("could not read RTC time: %s (%d)", strerror(errno), errno);
+		close(fd);
+
+		return;
+	}
+
+	timeout_start = time(NULL);
+
+	while (true) {
+		if (ioctl(fd, RTC_RD_TIME, &hc_now) < 0) {
+			error("could not read RTC time: %s (%d)", strerror(errno), errno);
+			close(fd);
+
+			return;
+		}
+
+		if (hc_start.tm_sec != hc_now.tm_sec) {
+			break;
+		}
+
+		timeout_now = time(NULL);
+
+		if (timeout_now - timeout_start > 3) {
+			error("RTC time seems to be stuck, cannot set system time");
+			close(fd);
+
+			return;
+		}
+	}
+
+	hc_now.tm_isdst = -1; // daylight saving time is undefined
+
+	close(fd);
+
+	// set system time
+	sys_now.tv_sec = timegm(&hc_now);
+	sys_now.tv_usec = 0;
+
+	if (sys_now.tv_sec < 0) {
+		error("could not convert RTC time %d-%02d-%02d %02d:%02d:%02d UTC to system time: %s (%d)",
+		      hc_now.tm_year + 1900, hc_now.tm_mon + 1, hc_now.tm_mday,
+		      hc_now.tm_hour, hc_now.tm_min, hc_now.tm_sec, strerror(errno), errno);
+
+		return;
+	}
+
+	localtime_r(&sys_now.tv_sec, &sys_now_local);
+
+	minuteswest = timezone / 60;
+
+	if (sys_now_local.tm_isdst) {
+		minuteswest -= 60;
+	}
+
+	tz.tz_minuteswest = minuteswest;
+	tz.tz_dsttime = 0;
+
+	if (settimeofday(&sys_now, &tz) < 0) {
+		error("could not use RTC time %d-%02d-%02d %02d:%02d:%02d UTC as system time %d-%02d-%02d %02d:%02d:%02d %+03d:%02d: %s (%d)",
+		      hc_now.tm_year + 1900, hc_now.tm_mon + 1, hc_now.tm_mday,
+		      hc_now.tm_hour, hc_now.tm_min, hc_now.tm_sec,
+		      sys_now_local.tm_year + 1900, sys_now_local.tm_mon + 1, sys_now_local.tm_mday,
+		      sys_now_local.tm_hour, sys_now_local.tm_min, sys_now_local.tm_sec,
+		      -minuteswest / 60, abs(minuteswest) % 60,
+		      strerror(errno), errno);
+
+		return;
+	}
+
+	print("using RTC time %d-%02d-%02d %02d:%02d:%02d UTC as system time %d-%02d-%02d %02d:%02d:%02d %+03d:%02d",
+	      hc_now.tm_year + 1900, hc_now.tm_mon + 1, hc_now.tm_mday,
+	      hc_now.tm_hour, hc_now.tm_min, hc_now.tm_sec,
+	      sys_now_local.tm_year + 1900, sys_now_local.tm_mon + 1, sys_now_local.tm_mday,
+	      sys_now_local.tm_hour, sys_now_local.tm_min, sys_now_local.tm_sec,
+	      -minuteswest / 60, abs(minuteswest) % 60);
+}
+
+static void eeprom_read(void)
 {
 	int fd;
 	size_t address;
@@ -886,10 +989,14 @@ int main(void)
 	// FIXME: use /proc/cmdline root an rootfstype instead?
 	robust_mount("/dev/mmcblk0p2", "/mnt", "ext4", MS_NOATIME);
 
-	// read eeprom content
+	// set system clock from RTC
 	modprobe("i2c_bcm2835");
+	modprobe("rtc_pcf8523");
+	rtc_hctosys();
+
+	// read eeprom content
 	modprobe("i2c_dev");
-	read_eeprom();
+	eeprom_read();
 
 	// replace password if necessary
 	replace_password();
