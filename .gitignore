@@ -2,6 +2,7 @@
 image/balena/balena-cli/
 image/balena/balena-cli-*.zip
 image/balena/balena-os-*.zip
+image/raspbian/build-bootloader/
 image/raspbian/build-libkmod/
 image/raspbian/build-initramfs/
 image/raspbian/build-zlib/
