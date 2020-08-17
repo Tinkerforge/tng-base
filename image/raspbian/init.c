@@ -552,7 +552,7 @@ static void eeprom_read(void)
 	}
 
 	if (u.eeprom.data_v1.uid[sizeof(u.eeprom.data_v1.uid) - 1] != '\0') {
-		error("EEPROM data uid is not null-terminated");
+		error("EEPROM data UID is not null-terminated");
 
 		return;
 	}
