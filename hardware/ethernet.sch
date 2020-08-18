@@ -1926,7 +1926,7 @@ Wire Wire Line
 Wire Wire Line
 	15700 9000 15700 8300
 Wire Wire Line
-	15450 8300 15700 8300
+	15450 8300 15550 8300
 Connection ~ 15450 8300
 $Comp
 L tinkerforge:C C436
@@ -2334,8 +2334,22 @@ Wire Wire Line
 Connection ~ 11150 4450
 Wire Wire Line
 	11150 4450 12800 4450
-Text Notes 1700 6200 0    118  ~ 0
-!Connection TDI TMS!\nvs Schematic
-Text Notes 1700 5150 0    118  ~ 0
-Reset stable?\npullup @ STM32?
+$Comp
+L tinkerforge:CONN_1 P?
+U 1 1 5FFDC793
+P 15550 8100
+AR Path="/5C40A9C3/5FFDC793" Ref="P?"  Part="1" 
+AR Path="/5C43DACC/5FFDC793" Ref="P401"  Part="1" 
+F 0 "P401" V 15750 7900 39  0000 L CNN
+F 1 "TST_1V2" V 15650 7900 39  0000 L CNN
+F 2 "kicad-libraries:TSTPT" H 15550 8100 60  0001 C CNN
+F 3 "" H 15550 8100 60  0000 C CNN
+	1    15550 8100
+	0    1    -1   0   
+$EndComp
+Wire Wire Line
+	15550 8200 15550 8300
+Connection ~ 15550 8300
+Wire Wire Line
+	15550 8300 15700 8300
 $EndSCHEMATC

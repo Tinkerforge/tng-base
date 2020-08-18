@@ -3337,4 +3337,46 @@ $EndComp
 Connection ~ 15500 7250
 Text Notes 13000 1250 0    50   ~ 0
 Copyright Tinkerforge GmbH 2020.\nThis documentation describes Open Hardware and is licensed under the\nCERN OHL v. 1.1.\nYou may redistribute and modify this documentation under the terms of the\nCERN OHL v.1.1. (http://ohwr.org/cernohl). This documentation is distributed\nWITHOUT ANY EXPRESS OR IMPLIED WARRANTY, INCLUDING OF\nMERCHANTABILITY, SATISFACTORY QUALITY AND FITNESS FOR A\nPARTICULAR PURPOSE. Please see the CERN OHL v.1.1 for applicable\nconditions\n
+$Comp
+L tinkerforge:CONN_1 P?
+U 1 1 5FDECF2C
+P 9100 1050
+AR Path="/5C40A9C3/5FDECF2C" Ref="P?"  Part="1" 
+AR Path="/5FDECF2C" Ref="P105"  Part="1" 
+F 0 "P105" V 9300 850 39  0000 L CNN
+F 1 "TST_3V3P" V 9200 850 39  0000 L CNN
+F 2 "kicad-libraries:TSTPT" H 9100 1050 60  0001 C CNN
+F 3 "" H 9100 1050 60  0000 C CNN
+	1    9100 1050
+	1    0    0    1   
+$EndComp
+Wire Wire Line
+	8900 1050 9000 1050
+Connection ~ 8900 1050
+$Comp
+L tinkerforge:CONN_1 P?
+U 1 1 5FEFDA43
+P 8850 10850
+AR Path="/5C40A9C3/5FEFDA43" Ref="P?"  Part="1" 
+AR Path="/5FEFDA43" Ref="P104"  Part="1" 
+F 0 "P104" H 8950 10850 39  0000 L CNN
+F 1 "TST_GND" H 8800 10950 39  0000 L CNN
+F 2 "kicad-libraries:TSTPT" H 8850 10850 60  0001 C CNN
+F 3 "" H 8850 10850 60  0000 C CNN
+	1    8850 10850
+	1    0    0    1   
+$EndComp
+$Comp
+L tinkerforge:GND #PWR0214
+U 1 1 5FF5CD8A
+P 8700 10850
+F 0 "#PWR0214" H 8700 10850 30  0001 C CNN
+F 1 "GND" H 8700 10780 30  0001 C CNN
+F 2 "" H 8700 10850 60  0000 C CNN
+F 3 "" H 8700 10850 60  0000 C CNN
+	1    8700 10850
+	-1   0    0    -1  
+$EndComp
+Wire Wire Line
+	8700 10850 8750 10850
 $EndSCHEMATC
