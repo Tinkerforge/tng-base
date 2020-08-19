@@ -531,6 +531,7 @@ static void read_eeprom(void)
 	// set slave address
 	if (ioctl(fd, I2C_SLAVE, EEPROM_ADDRESS) < 0) {
 		error("could not set EEPROM slave address to 0x%02X: %s (%d)", EEPROM_ADDRESS, strerror(errno), errno);
+		print("closing %s", EEPROM_PATH);
 		close(fd);
 
 		return;
@@ -539,6 +540,7 @@ static void read_eeprom(void)
 	// set read address to 0
 	if (i2c_write16(fd, 0, 0) < 0) {
 		error("could not set EEPROM read address to zero: %s (%d)", strerror(errno), errno);
+		print("closing %s", EEPROM_PATH);
 		close(fd);
 
 		return;
@@ -550,6 +552,7 @@ static void read_eeprom(void)
 	for (address = 0; address < sizeof(u.eeprom.header); ++address) {
 		if (i2c_read8(fd, &u.bytes[address]) < 0) {
 			error("could not read EEPROM header at address %zu: %s (%d)", address, strerror(errno), errno);
+			print("closing %s", EEPROM_PATH);
 			close(fd);
 
 			return;
@@ -558,6 +561,7 @@ static void read_eeprom(void)
 
 	if (u.eeprom.header.magic_number != EEPROM_MAGIC_NUMBER) {
 		error("EEPROM header has wrong magic number: %08X (actual) != %08X (expected)", u.eeprom.header.magic_number, EEPROM_MAGIC_NUMBER);
+		print("closing %s", EEPROM_PATH);
 		close(fd);
 
 		return;
@@ -573,6 +577,7 @@ static void read_eeprom(void)
 	for (address = sizeof(u.eeprom.header); address < sizeof(u.eeprom.header) + u.eeprom.header.data_length; ++address) {
 		if (i2c_read8(fd, &byte) < 0) {
 			error("could not read EEPROM data at address %zu: %s (%d)", address, strerror(errno), errno);
+			print("closing %s", EEPROM_PATH);
 			close(fd);
 
 			return;
@@ -925,7 +930,7 @@ static void configure_ethernet(void)
 		panic("could not write Ethernet config: %s (%d)", strerror(errno), errno);
 	}
 
-	usleep(100 * 1000); // wait 100 ms to let everything settle
+	usleep(100 * 1000); // wait 100 msec to let everything settle
 
 	// validate config
 	print("validating Ethernet config");
