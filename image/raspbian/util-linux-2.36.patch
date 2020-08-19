@@ -1,0 +1,125 @@
+diff -ur util-linux-2.36-orig/include/fileutils.h util-linux-2.36/include/fileutils.h
+--- util-linux-2.36-orig/include/fileutils.h	2020-07-23 11:26:04.000000000 +0200
++++ util-linux-2.36/include/fileutils.h	2020-08-19 14:04:07.513537997 +0200
+@@ -55,7 +55,7 @@
+ extern int dup_fd_cloexec(int oldfd, int lowfd);
+ extern int get_fd_tabsize(void);
+ 
+-extern int mkdir_p(const char *path, mode_t mode);
++extern int mkdir_p2(const char *path, mode_t mode);
+ extern char *stripoff_last_component(char *path);
+ 
+ /* This is readdir()-like function, but skips "." and ".." directory entries */
+diff -ur util-linux-2.36-orig/lib/fileutils.c util-linux-2.36/lib/fileutils.c
+--- util-linux-2.36-orig/lib/fileutils.c	2020-07-23 11:26:04.000000000 +0200
++++ util-linux-2.36/lib/fileutils.c	2020-08-19 14:04:05.997556632 +0200
+@@ -198,7 +198,7 @@
+ #endif
+ 
+ 
+-int mkdir_p(const char *path, mode_t mode)
++int mkdir_p2(const char *path, mode_t mode)
+ {
+ 	char *p, *dir;
+ 	int rc = 0;
+diff -ur util-linux-2.36-orig/libmount/src/context.c util-linux-2.36/libmount/src/context.c
+--- util-linux-2.36-orig/libmount/src/context.c	2020-07-23 11:26:04.000000000 +0200
++++ util-linux-2.36/libmount/src/context.c	2020-08-19 14:03:38.529894337 +0200
+@@ -1951,7 +1951,7 @@
+ 
+ 		/* supported only for root or non-suid mount(8) */
+ 		if (!mnt_context_is_restricted(cxt)) {
+-			rc = mkdir_p(tgt, mode);
++			rc = mkdir_p2(tgt, mode);
+ 			if (rc)
+ 				DBG(CXT, ul_debug("mkdir %s failed: %m", tgt));
+ 		} else
+diff -ur util-linux-2.36-orig/libmount/src/utils.c util-linux-2.36/libmount/src/utils.c
+--- util-linux-2.36-orig/libmount/src/utils.c	2020-07-23 11:26:04.000000000 +0200
++++ util-linux-2.36/libmount/src/utils.c	2020-08-19 14:03:38.521894435 +0200
+@@ -596,73 +596,17 @@
+  */
+ char *mnt_get_username(const uid_t uid)
+ {
+-        struct passwd pwd;
+-	struct passwd *res;
+-	char *buf, *username = NULL;
+-
+-	buf = malloc(UL_GETPW_BUFSIZ);
+-	if (!buf)
+-		return NULL;
+-
+-	if (!getpwuid_r(uid, &pwd, buf, UL_GETPW_BUFSIZ, &res) && res)
+-		username = strdup(pwd.pw_name);
+-
+-	free(buf);
+-	return username;
++	return NULL;
+ }
+ 
+ int mnt_get_uid(const char *username, uid_t *uid)
+ {
+-	int rc = -1;
+-        struct passwd pwd;
+-	struct passwd *pw;
+-	char *buf;
+-
+-	if (!username || !uid)
+-		return -EINVAL;
+-
+-	buf = malloc(UL_GETPW_BUFSIZ);
+-	if (!buf)
+-		return -ENOMEM;
+-
+-	if (!getpwnam_r(username, &pwd, buf, UL_GETPW_BUFSIZ, &pw) && pw) {
+-		*uid= pw->pw_uid;
+-		rc = 0;
+-	} else {
+-		DBG(UTILS, ul_debug(
+-			"cannot convert '%s' username to UID", username));
+-		rc = errno ? -errno : -EINVAL;
+-	}
+-
+-	free(buf);
+-	return rc;
++	return -ENOSYS;
+ }
+ 
+ int mnt_get_gid(const char *groupname, gid_t *gid)
+ {
+-	int rc = -1;
+-        struct group grp;
+-	struct group *gr;
+-	char *buf;
+-
+-	if (!groupname || !gid)
+-		return -EINVAL;
+-
+-	buf = malloc(UL_GETPW_BUFSIZ);
+-	if (!buf)
+-		return -ENOMEM;
+-
+-	if (!getgrnam_r(groupname, &grp, buf, UL_GETPW_BUFSIZ, &gr) && gr) {
+-		*gid= gr->gr_gid;
+-		rc = 0;
+-	} else {
+-		DBG(UTILS, ul_debug(
+-			"cannot convert '%s' groupname to GID", groupname));
+-		rc = errno ? -errno : -EINVAL;
+-	}
+-
+-	free(buf);
+-	return rc;
++	return -ENOSYS;
+ }
+ 
+ int mnt_in_group(gid_t gid)
+@@ -1474,7 +1418,7 @@
+ {
+ 	int rc;
+ 
+-	rc = mkdir_p(argv[1], S_IRWXU |
++	rc = mkdir_p2(argv[1], S_IRWXU |
+ 			 S_IRGRP | S_IXGRP |
+ 			 S_IROTH | S_IXOTH);
+ 	if (rc)
