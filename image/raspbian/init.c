@@ -57,6 +57,7 @@
 #include <linux/rtc.h>
 #include <time.h>
 #include <sys/time.h>
+#include <libmount.h>
 
 #define RTC_PATH "/dev/rtc0"
 #define EEPROM_PATH "/dev/i2c-1"
@@ -200,24 +201,80 @@ static void panic(const char *format, ...)
 
 static void robust_mount(const char *source, const char *target, const char *type, unsigned long flags)
 {
+	struct libmnt_context *ctx;
+	int rc;
+	char buffer[512] = "<unknown>";
+	int ex;
 	size_t retries = 0;
 
-	print("mounting %s at %s", source, target);
+	print("mounting %s (%s) at %s", source, type, target);
 
-	while (mount(source, target, type, flags, "") < 0) {
-		if (errno == ENXIO) {
-			error("could not mount %s at %s, device is missing, trying again in 250 msec", source, target);
-			usleep(250 * 1000);
+retry:
+	ctx = mnt_new_context();
 
-			errno = 0; // clear errno, so it doesn't leak if the next mount try succeeds
-			++retries;
-		} else {
-			panic("could not mount %s at %s: %s (%d)", source, target, strerror(errno), errno);
-		}
+	if (ctx == NULL) {
+		panic("could not create libmount context");
 	}
 
+	rc = mnt_context_disable_helpers(ctx, true);
+
+	if (rc < 0) {
+		panic("could not disable libmount helpers: %s (%d)", strerror(-rc), -rc);
+	}
+
+	rc = mnt_context_set_fstype(ctx, type);
+
+	if (rc < 0) {
+		panic("could not set libmount fstype to %s: %s (%d)", type, strerror(-rc), -rc);
+	}
+
+	rc = mnt_context_set_source(ctx, source);
+
+	if (rc < 0) {
+		panic("could not set libmount source to %s: %s (%d)", source, strerror(-rc), -rc);
+	}
+
+	rc = mnt_context_set_target(ctx, target);
+
+	if (rc < 0) {
+		panic("could not set libmount target to %s: %s (%d)", target, strerror(-rc), -rc);
+	}
+
+	rc = mnt_context_set_mflags(ctx, flags);
+
+	if (rc < 0) {
+		panic("could not set libmount flags to 0x%08lx: %s (%d)", flags, strerror(-rc), -rc);
+	}
+
+	rc = mnt_context_mount(ctx);
+
+	if (rc != 0) {
+		if (rc == -MNT_ERR_NOSOURCE) {
+			error("could not mount %s (%s) at %s, device is missing, trying again in 500 msec", source, type, target);
+
+			// fully recreate context for each try. the mnt_reset_context function
+			// could be used here, but it doesn't invalidate/refresh the blkid cache
+			// and there seems to be no other function to enforce that. but without
+			// forcing a blkid cache update it takes around 200 seconds for a libmnt
+			// context to realize that a new device has arrived.
+			mnt_free_context(ctx);
+
+			usleep(500 * 1000);
+
+			++retries;
+
+			goto retry;
+		}
+
+		ex = mnt_context_get_excode(ctx, rc, buffer, sizeof(buffer));
+
+		panic("could not mount %s (%s) at %s: %s (%d -> %d)", source, type, target, buffer, rc, ex);
+	}
+
+	mnt_free_context(ctx);
+
 	if (retries > 0) {
-		print("succssfully mounted %s at %s after %zu %s", source, target, retries, retries == 1 ? "retry" : "retries");
+		print("successfully mounted %s (%s) at %s after %zu %s", source, type, target, retries, retries == 1 ? "retry" : "retries");
 	}
 }
 
@@ -447,7 +504,7 @@ static void rtc_hctosys(void)
 	      -minuteswest / 60, abs(minuteswest) % 60);
 }
 
-static void eeprom_read(void)
+static void read_eeprom(void)
 {
 	int fd;
 	size_t address;
@@ -474,6 +531,7 @@ static void eeprom_read(void)
 	// set slave address
 	if (ioctl(fd, I2C_SLAVE, EEPROM_ADDRESS) < 0) {
 		error("could not set EEPROM slave address to 0x%02X: %s (%d)", EEPROM_ADDRESS, strerror(errno), errno);
+		print("closing %s", EEPROM_PATH);
 		close(fd);
 
 		return;
@@ -482,6 +540,7 @@ static void eeprom_read(void)
 	// set read address to 0
 	if (i2c_write16(fd, 0, 0) < 0) {
 		error("could not set EEPROM read address to zero: %s (%d)", strerror(errno), errno);
+		print("closing %s", EEPROM_PATH);
 		close(fd);
 
 		return;
@@ -493,6 +552,7 @@ static void eeprom_read(void)
 	for (address = 0; address < sizeof(u.eeprom.header); ++address) {
 		if (i2c_read8(fd, &u.bytes[address]) < 0) {
 			error("could not read EEPROM header at address %zu: %s (%d)", address, strerror(errno), errno);
+			print("closing %s", EEPROM_PATH);
 			close(fd);
 
 			return;
@@ -501,6 +561,7 @@ static void eeprom_read(void)
 
 	if (u.eeprom.header.magic_number != EEPROM_MAGIC_NUMBER) {
 		error("EEPROM header has wrong magic number: %08X (actual) != %08X (expected)", u.eeprom.header.magic_number, EEPROM_MAGIC_NUMBER);
+		print("closing %s", EEPROM_PATH);
 		close(fd);
 
 		return;
@@ -516,6 +577,7 @@ static void eeprom_read(void)
 	for (address = sizeof(u.eeprom.header); address < sizeof(u.eeprom.header) + u.eeprom.header.data_length; ++address) {
 		if (i2c_read8(fd, &byte) < 0) {
 			error("could not read EEPROM data at address %zu: %s (%d)", address, strerror(errno), errno);
+			print("closing %s", EEPROM_PATH);
 			close(fd);
 
 			return;
@@ -552,7 +614,7 @@ static void eeprom_read(void)
 	}
 
 	if (u.eeprom.data_v1.uid[sizeof(u.eeprom.data_v1.uid) - 1] != '\0') {
-		error("EEPROM data uid is not null-terminated");
+		error("EEPROM data UID is not null-terminated");
 
 		return;
 	}
@@ -868,7 +930,7 @@ static void configure_ethernet(void)
 		panic("could not write Ethernet config: %s (%d)", strerror(errno), errno);
 	}
 
-	usleep(100 * 1000); // wait 100 ms to let everything settle
+	usleep(100 * 1000); // wait 100 msec to let everything settle
 
 	// validate config
 	print("validating Ethernet config");
@@ -956,13 +1018,59 @@ update:
 	}
 }
 
+static void read_cmdline(const char **root, const char **rootfstype, const char **init)
+{
+	int fd;
+	static char buffer[2048];
+	ssize_t length;
+	char *option;
+
+	*root = NULL;
+	*rootfstype = NULL;
+	*init = NULL;
+
+	print("reading /proc/cmdline");
+
+	// read /proc/cmdline
+	fd = open("/proc/cmdline", O_RDONLY);
+
+	if (fd < 0) {
+		panic("could not open /proc/cmdline for reading: %s (%d)", strerror(errno), errno);
+	}
+
+	length = read(fd, buffer, sizeof(buffer) - 1);
+
+	if (length < 0) {
+		panic("could not read from /proc/cmdline: %s (%d)", strerror(errno), errno);
+	}
+
+	close(fd);
+
+	buffer[length] = '\0';
+
+	// parse /proc/cmdline
+	option = strtok(buffer, "\r\n\t ");
+
+	while (option != NULL) {
+		if (strncmp(option, "root=", 5) == 0) {
+			*root = option + 5;
+		} else if (strncmp(option, "rootfstype=", 11) == 0) {
+			*rootfstype = option + 11;
+		} else if (strncmp(option, "init=", 5) == 0) {
+			*init = option + 5;
+		}
+
+		option = strtok(NULL, "\r\n\t ");
+	}
+}
+
 int main(void)
 {
+	const char *root;
+	const char *rootfstype;
+	const char *init;
 	char buffer[256];
-	const char *execv_argv[] = {
-		"/sbin/init",
-		NULL
-	};
+	const char *execv_argv[] = {NULL, NULL};
 
 	// open /dev/kmsg
 	kmsg_fd = open("/dev/kmsg", O_WRONLY);
@@ -974,6 +1082,21 @@ int main(void)
 		panic("could not mount proc at /proc: %s (%d)", strerror(errno), errno);
 	}
 
+	// read cmdline
+	read_cmdline(&root, &rootfstype, &init);
+
+	if (root == NULL) {
+		root = "/dev/mmcblk0p2";
+	}
+
+	if (rootfstype == NULL) {
+		rootfstype = "ext4";
+	}
+
+	if (init == NULL) {
+		init = "/sbin/init";
+	}
+
 	// mount /sys
 	print("mounting sysfs at /sys");
 
@@ -981,13 +1104,26 @@ int main(void)
 		panic("could not mount sysfs at /sys: %s (%d)", strerror(errno), errno);
 	}
 
-	// wait 250 ms for the device to show up before trying to mount it to avoid
-	// an initial warning about the device not being available yet
+	// mount /dev
+	print("mounting devtmpfs at /dev");
+
+	if (mount("devtmpfs", "/dev", "devtmpfs", 0, "") < 0) {
+		panic("could not mount devtmpfs at /dev: %s (%d)", strerror(errno), errno);
+	}
+
+	// wait 250 msec for the root device to show up before trying to mount it to
+	// avoid an initial warning about the device not being available yet
 	usleep(250 * 1000);
 
-	// mount /dev/mmcblk0p2 (root)
-	// FIXME: use /proc/cmdline root an rootfstype instead?
-	robust_mount("/dev/mmcblk0p2", "/mnt", "ext4", MS_NOATIME);
+	// mount root at /mnt
+	robust_mount(root, "/mnt", rootfstype, MS_NOATIME);
+
+	// mount devtmpfs at /mnt/dev
+	print("mounting devtmpfs at /mnt/dev");
+
+	if (mount("devtmpfs", "/mnt/dev", "devtmpfs", 0, "") < 0) {
+		panic("could not mount devtmpfs at /mnt/dev: %s (%d)", strerror(errno), errno);
+	}
 
 	// set system clock from RTC
 	modprobe("i2c_bcm2835");
@@ -996,7 +1132,7 @@ int main(void)
 
 	// read eeprom content
 	modprobe("i2c_dev");
-	eeprom_read();
+	read_eeprom();
 
 	// replace password if necessary
 	replace_password();
@@ -1043,6 +1179,13 @@ int main(void)
 		panic("could not unmount /sys: %s (%d)", strerror(errno), errno);
 	}
 
+	// unmount /dev
+	print("unmounting /dev");
+
+	if (umount("/dev") < 0) {
+		panic("could not unmount /dev: %s (%d)", strerror(errno), errno);
+	}
+
 	// switch root (logic taken from busybox switch_root and simplified)
 	print("switching root-mount to /mnt");
 
@@ -1065,7 +1208,7 @@ int main(void)
 	}
 
 	// execute /sbin/init
-	print("executing /sbin/init in /mnt");
+	print("executing %s in /mnt", init);
 
 	if (kmsg_fd >= 0) {
 		close(kmsg_fd);
@@ -1073,9 +1216,11 @@ int main(void)
 		kmsg_fd = -1;
 	}
 
+	execv_argv[0] = init;
+
 	execv(execv_argv[0], (char **)execv_argv);
 
-	panic("could not execute /sbin/init in /mnt: %s (%d)", strerror(errno), errno);
+	panic("could not execute %s in /mnt: %s (%d)", init, strerror(errno), errno);
 
 	return EXIT_FAILURE; // unreachable
 }
