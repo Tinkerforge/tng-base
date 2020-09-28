@@ -1279,8 +1279,6 @@ Wire Wire Line
 	9600 10200 9600 10150
 Connection ~ 9600 10150
 Wire Wire Line
-	9600 10150 9850 10150
-Wire Wire Line
 	9850 10150 9850 10650
 NoConn ~ 9400 10200
 NoConn ~ 9500 10200
@@ -1297,7 +1295,6 @@ F 3 "" H 10050 10150 60  0000 C CNN
 	1    10050 10150
 	0    -1   -1   0   
 $EndComp
-Connection ~ 9850 10150
 $Comp
 L tinkerforge:GND #PWR0335
 U 1 1 5C1D801E
@@ -3532,4 +3529,7 @@ F 3 "" H 3350 9800 60  0000 C CNN
 	1    3350 9800
 	-1   0    0    -1  
 $EndComp
+Connection ~ 9850 10150
+Wire Wire Line
+	9600 10150 9850 10150
 $EndSCHEMATC
